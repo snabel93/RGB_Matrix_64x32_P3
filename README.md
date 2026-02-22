@@ -1,6 +1,6 @@
 # RGB Matrix 64×32 P3 — Raspberry Pi Pico 2 (RP2350)
 
-A scrolling information display for a **64×32 P3 HUB75 RGB LED matrix panel**, driven by a **Raspberry Pi Pico 2 (RP2350)**. Cycles through eight screens showing a welcome animation, clock, date, temperature, temperature statistics, humidity, humidity statistics, and a UK map image — all sourced from a DS1307 real-time clock and an AHT20 temperature/humidity sensor.
+A scrolling information display for a **Waveshare P3-64×32 HUB75 RGB LED matrix panel**, driven by a **Raspberry Pi Pico 2 (RP2350)**. Cycles through eight screens showing a welcome animation, clock, date, temperature, temperature statistics, humidity, humidity statistics, and a UK map image — all sourced from a DS1307 real-time clock and an AHT20 temperature/humidity sensor.
 
 ---
 
