@@ -1,0 +1,405 @@
+#include "RGBmatrixPanel.h"
+#include "bit_bmp.h"
+#include "fonts.h"
+#include <string.h>
+#include <stdlib.h>
+#include <Wire.h>
+#include <RTClib.h>
+
+RTC_DS1307 rtc;
+
+// RTC on I2C1: physical pin 31 = GP26 (SDA), physical pin 32 = GP27 (SCL)
+#define RTC_SDA_PIN 26
+#define RTC_SCL_PIN 27
+
+// Pin definitions for PICO 2 RP2350
+#define R1_PIN  0
+#define G1_PIN  1
+#define B1_PIN  2
+#define R2_PIN  3
+#define G2_PIN  4
+#define B2_PIN  5
+#define A_PIN   6
+#define B_PIN   7
+#define C_PIN   8
+#define D_PIN   9
+#define CLK_PIN 10
+#define LAT_PIN 11
+#define OE_PIN  12
+
+uint8_t rgbpins[] = {R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN};
+
+RGBmatrixPanel matrix(A_PIN, B_PIN, C_PIN, D_PIN, CLK_PIN, LAT_PIN, OE_PIN, false, 64, rgbpins);
+
+void setup()
+{
+  Serial.begin(115200);
+  Reginit();
+  matrix.begin();
+
+  // Initialize I2C1 for RTC on GP26 (SDA) / GP27 (SCL)
+  Wire1.setSDA(RTC_SDA_PIN);
+  Wire1.setSCL(RTC_SCL_PIN);
+  Wire1.begin();
+  rtc.begin(&Wire1);
+
+  // Uncomment below ONCE to set the RTC to the compile time, then re-comment and re-upload:
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
+  delay(500);
+}
+
+int demoIndex = 0;
+#define NUM_DEMOS 8
+
+void loop()
+{
+  switch (demoIndex) {
+    case 0: demo_rainbowScroll();  break;
+    case 1: demo_clock();          break;
+   // case 2: demo_bouncingBall();   break;
+   // case 3: demo_shapes();         break;
+   // case 4: demo_colorGradient();  break;
+   // case 5: demo_starfield();      break;
+   // case 6: demo_plasma();         break;
+   // case 7: demo_bitmap();         break;
+  }
+  demoIndex = (demoIndex + 1) % NUM_DEMOS;
+}
+
+// Helper to draw text
+void display_text(int x, int y, const char *str, const GFXfont *f, int color, int pixels_size)
+{
+  matrix.setTextSize(pixels_size);
+  matrix.setTextWrap(false);
+  matrix.setFont(f);
+  matrix.setCursor(x, y);
+  matrix.setTextColor(color);
+  matrix.println(str);
+}
+
+// ---- DEMO: Clock & Date (shows time 2s, then date 3s, then returns) ----
+void demo_clock()
+{
+  char buf[16];
+  const char *monthNames[] = {
+    "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  };
+  const char *dayNames[] = {
+    "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
+  };
+
+  // --- Show clock for 2 seconds (updating live) ---
+  unsigned long start = millis();
+  while (millis() - start < 5000) {
+    DateTime now = rtc.now();
+    matrix.fillScreen(0);
+
+    // Time in HH:MM:SS format, centered
+    sprintf(buf, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+    display_text(8, 7, buf, NULL, matrix.Color333(0, 7, 7), 1);
+
+    // Label below
+    display_text(14, 22, "CLOCK", NULL, matrix.Color333(2, 2, 2), 1);
+
+    delay(100);
+  }
+
+  // --- Show date for 3 seconds ---
+  DateTime now = rtc.now();
+  matrix.fillScreen(0);
+
+  // Day name (dayOfTheWeek: 0=Sun, 1=Mon, ... 6=Sat)
+  display_text(20, 3, dayNames[now.dayOfTheWeek()], NULL, matrix.Color333(7, 5, 0), 1);
+
+  // Date: DD Mon
+  sprintf(buf, "%02d %s", now.day(), monthNames[now.month()]);
+  display_text(8, 14, buf, NULL, matrix.Color333(0, 7, 0), 1);
+
+  // Year
+  sprintf(buf, "%04d", now.year());
+  display_text(17, 25, buf, NULL, matrix.Color333(0, 5, 7), 1);
+
+  delay(3000);
+}
+
+// ---- DEMO 1: Rainbow scrolling text ----
+void demo_rainbowScroll()
+{
+  const char *msg = "Welcome to my World!";
+  int msgWidth = strlen(msg) * 12;  // size 2 = ~12px per char
+  uint16_t hue = 0;
+
+  for (int x = 64; x > -msgWidth; x--) {
+    matrix.fillScreen(0);
+    // Draw each character in a different rainbow color
+    matrix.setTextSize(2);
+    matrix.setTextWrap(false);
+    matrix.setFont(NULL);
+    for (int i = 0; msg[i] != '\0'; i++) {
+      int charX = x + i * 12;
+      if (charX > -12 && charX < 64) {
+        uint16_t h = (hue + i * 800) % 6000;
+        uint8_t r, g, b;
+        // Simple HSV-like rainbow
+        int sector = h / 1000;
+        int frac = (h % 1000) * 255 / 1000;
+        switch (sector) {
+          case 0: r = 255; g = frac; b = 0; break;
+          case 1: r = 255 - frac; g = 255; b = 0; break;
+          case 2: r = 0; g = 255; b = frac; break;
+          case 3: r = 0; g = 255 - frac; b = 255; break;
+          case 4: r = frac; g = 0; b = 255; break;
+          default: r = 255; g = 0; b = 255 - frac; break;
+        }
+        matrix.setCursor(charX, 13);
+        matrix.setTextColor(matrix.Color888(r, g, b, true));
+        matrix.print(msg[i]);
+      }
+    }
+    hue = (hue + 40) % 6000;
+    delay(25);
+  }
+}
+
+// ---- DEMO 2: Bouncing ball ----
+void demo_bouncingBall()
+{
+  float bx = 10, by = 10;
+  float vx = 1.5, vy = 1.0;
+  int radius = 4;
+
+  for (int frame = 0; frame < 300; frame++) {
+    matrix.fillScreen(0);
+
+    // Draw the ball
+    matrix.fillCircle((int)bx, (int)by, radius, matrix.Color888(255, 100, 0, true));
+    // Draw a shadow/trail
+    matrix.drawCircle((int)bx, (int)by, radius + 1, matrix.Color888(100, 40, 0, true));
+
+    // Draw border
+    matrix.drawRect(0, 0, 64, 32, matrix.Color333(1, 1, 1));
+
+    // Move ball
+    bx += vx;
+    by += vy;
+
+    // Bounce off walls
+    if (bx - radius <= 1 || bx + radius >= 62) { vx = -vx; bx += vx; }
+    if (by - radius <= 1 || by + radius >= 30) { vy = -vy; by += vy; }
+
+    delay(20);
+  }
+}
+
+// ---- DEMO 3: Drawing shapes ----
+void demo_shapes()
+{
+  matrix.fillScreen(0);
+
+  // Filled rectangles
+  matrix.fillRect(2, 2, 12, 10, matrix.Color333(7, 0, 0));
+  matrix.fillRect(16, 2, 12, 10, matrix.Color333(0, 7, 0));
+  matrix.fillRect(30, 2, 12, 10, matrix.Color333(0, 0, 7));
+  matrix.fillRect(44, 2, 12, 10, matrix.Color333(7, 7, 0));
+
+  // Circles
+  matrix.fillCircle(8, 24, 5, matrix.Color333(7, 0, 7));
+  matrix.drawCircle(8, 24, 6, matrix.Color333(3, 0, 3));
+
+  // Triangle
+  matrix.fillTriangle(20, 28, 28, 16, 36, 28, matrix.Color333(0, 7, 7));
+
+  // Rounded rect
+  matrix.fillRoundRect(40, 16, 20, 12, 3, matrix.Color333(7, 3, 0));
+  matrix.drawRoundRect(40, 16, 20, 12, 3, matrix.Color333(7, 7, 7));
+
+  // Lines
+  matrix.drawLine(58, 2, 58, 12, matrix.Color333(7, 7, 7));
+  matrix.drawLine(60, 2, 60, 12, matrix.Color333(7, 7, 7));
+
+  delay(4000);
+}
+
+// ---- DEMO 4: Color gradient ----
+void demo_colorGradient()
+{
+  // Smooth RGB gradient across the panel
+  for (int phase = 0; phase < 200; phase++) {
+    for (int x = 0; x < 64; x++) {
+      for (int y = 0; y < 32; y++) {
+        uint8_t r = (x * 4 + phase * 3) & 0xFF;
+        uint8_t g = (y * 8 + phase * 5) & 0xFF;
+        uint8_t b = ((x + y) * 3 + phase * 4) & 0xFF;
+        matrix.drawPixel(x, y, matrix.Color888(r, g, b, true));
+      }
+    }
+    delay(30);
+  }
+}
+
+// ---- DEMO 5: Starfield ----
+void demo_starfield()
+{
+  #define NUM_STARS 40
+  float starX[NUM_STARS], starY[NUM_STARS], starZ[NUM_STARS];
+
+  // Initialize stars
+  for (int i = 0; i < NUM_STARS; i++) {
+    starX[i] = random(-500, 500);
+    starY[i] = random(-500, 500);
+    starZ[i] = random(1, 500);
+  }
+
+  for (int frame = 0; frame < 400; frame++) {
+    matrix.fillScreen(0);
+
+    for (int i = 0; i < NUM_STARS; i++) {
+      // Project 3D to 2D
+      int sx = (int)(starX[i] / starZ[i] * 32) + 32;
+      int sy = (int)(starY[i] / starZ[i] * 16) + 16;
+
+      if (sx >= 0 && sx < 64 && sy >= 0 && sy < 32) {
+        // Brightness based on distance
+        int bright = 255 - (starZ[i] * 255 / 500);
+        if (bright < 30) bright = 30;
+        matrix.drawPixel(sx, sy, matrix.Color888(bright, bright, bright, true));
+      }
+
+      // Move star closer
+      starZ[i] -= 3;
+      if (starZ[i] <= 0) {
+        starX[i] = random(-500, 500);
+        starY[i] = random(-500, 500);
+        starZ[i] = 500;
+      }
+    }
+    delay(20);
+  }
+}
+
+// ---- DEMO 6: Plasma effect ----
+void demo_plasma()
+{
+  for (int t = 0; t < 150; t++) {
+    for (int y = 0; y < 32; y++) {
+      for (int x = 0; x < 64; x++) {
+        // Combine sine-like waves using integer math
+        int v1 = abs(((x + t) * 7) % 510 - 255);
+        int v2 = abs(((y + t) * 11) % 510 - 255);
+        int v3 = abs(((x + y + t * 2) * 5) % 510 - 255);
+
+        uint8_t r = (v1 + v3) / 2;
+        uint8_t g = (v2 + v1) / 2;
+        uint8_t b = (v3 + v2) / 2;
+        matrix.drawPixel(x, y, matrix.Color888(r, g, b, true));
+      }
+    }
+    delay(30);
+  }
+}
+
+// ---- DEMO 7: Bitmap display ----
+void demo_bitmap()
+{
+  // Display the image from bit_bmp.h
+  // The image data is 64x32 stored as RGB565 uint16_t values
+  for (int y = 0; y < 32; y++) {
+    for (int x = 0; x < 64; x++) {
+      uint16_t color = pgm_read_word(&gImage_image[y * 64 + x]);
+      // Swap bytes if needed (BMP data is often little-endian)
+      color = (color >> 8) | (color << 8);
+      matrix.drawPixel(x, y, color);
+    }
+  }
+  delay(4000);
+}
+
+void Reginit()
+{
+    pinMode(R1_PIN, OUTPUT);
+    pinMode(G1_PIN, OUTPUT);
+    pinMode(B1_PIN, OUTPUT);
+    pinMode(R2_PIN, OUTPUT);
+    pinMode(G2_PIN, OUTPUT);
+    pinMode(B2_PIN, OUTPUT);
+    pinMode(CLK_PIN, OUTPUT);
+    pinMode(OE_PIN, OUTPUT);
+    pinMode(LAT_PIN, OUTPUT);
+
+    digitalWrite(OE_PIN, HIGH);
+    digitalWrite(LAT_PIN, LOW);
+    digitalWrite(CLK_PIN, LOW);
+    int MaxLed = 64;
+
+    int C12[16] = {0, 1, 1, 1, 1,  1, 1, 1, 1, 1, 1,  1, 1, 1, 1, 1};
+    int C13[16] = {0, 0, 0, 0, 0,  0, 0, 0, 0, 1, 0,  0, 0, 0, 0, 0};
+
+    for (int l = 0; l < MaxLed; l++)
+    {
+        int y = l % 16;
+        digitalWrite(R1_PIN, LOW);
+        digitalWrite(G1_PIN, LOW);
+        digitalWrite(B1_PIN, LOW);
+        digitalWrite(R2_PIN, LOW);
+        digitalWrite(G2_PIN, LOW);
+        digitalWrite(B2_PIN, LOW);
+        if (C12[y] == 1)
+        {
+          digitalWrite(R1_PIN, HIGH);
+          digitalWrite(G1_PIN, HIGH);
+          digitalWrite(B1_PIN, HIGH);
+          digitalWrite(R2_PIN, HIGH);
+          digitalWrite(G2_PIN, HIGH);
+          digitalWrite(B2_PIN, HIGH);
+        }
+        if (l > MaxLed - 12)
+        {
+            digitalWrite(LAT_PIN, HIGH);
+        }
+        else
+        {
+            digitalWrite(LAT_PIN, LOW);
+        }
+        digitalWrite(CLK_PIN, HIGH);
+        delayMicroseconds(2);
+        digitalWrite(CLK_PIN, LOW);
+    }
+    digitalWrite(LAT_PIN, LOW);
+    digitalWrite(CLK_PIN, LOW);
+
+    // Send Data to control register 12
+    for (int l = 0; l < MaxLed; l++)
+    {
+        int y = l % 16;
+        digitalWrite(R1_PIN, LOW);
+        digitalWrite(G1_PIN, LOW);
+        digitalWrite(B1_PIN, LOW);
+        digitalWrite(R2_PIN, LOW);
+        digitalWrite(G2_PIN, LOW);
+        digitalWrite(B2_PIN, LOW);
+        if (C13[y] == 1)
+        {
+            digitalWrite(R1_PIN, HIGH);
+            digitalWrite(G1_PIN, HIGH);
+            digitalWrite(B1_PIN, HIGH);
+            digitalWrite(R2_PIN, HIGH);
+            digitalWrite(G2_PIN, HIGH);
+            digitalWrite(B2_PIN, HIGH);
+        }
+        if (l > MaxLed - 13)
+        {
+            digitalWrite(LAT_PIN, HIGH);
+        }
+        else
+        {
+            digitalWrite(LAT_PIN, LOW);
+        }
+        digitalWrite(CLK_PIN, HIGH);
+        delayMicroseconds(2);
+        digitalWrite(CLK_PIN, LOW);
+    }
+    digitalWrite(LAT_PIN, LOW);
+    digitalWrite(CLK_PIN, LOW);
+}
